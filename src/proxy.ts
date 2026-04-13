@@ -21,10 +21,13 @@ export const proxy = async (req: NextRequest) => {
     )
   }
 
+  const rawConnected = rawMeta.connected
   const meta = {
-    connected: rawMeta.connected
-      ? JSON.parse(rawMeta.connected)
-      : [],
+    connected: Array.isArray(rawConnected)
+      ? rawConnected
+      : rawConnected
+        ? JSON.parse(rawConnected)
+        : [],
     createdAt: rawMeta.createdAt
       ? Number(rawMeta.createdAt)
       : Date.now(),
