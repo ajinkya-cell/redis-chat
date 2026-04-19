@@ -7,12 +7,12 @@ export const proxy = async (req: NextRequest) => {
   const roomMatch = pathname.match(/^\/room\/([^/]+)$/)
 
   // ✅ since matcher already limits routes
-  if (!roomMatch) return NextResponse.next()
+  if (!roomMatch) return NextResponse.redirect(new URL('/',req.url))
 
   const roomId = roomMatch[1]
   const roomKey = `meta:${roomId}`
 
-  const rawMeta = await redis.hgetall<Record<string, string>>(roomKey)
+  const rawMeta = await redis.hgetall<{connected : string[] ; createdAt: number}>(roomKey)
 
   // ✅ room not found
   if (!rawMeta || Object.keys(rawMeta).length === 0) {
