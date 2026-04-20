@@ -55,7 +55,7 @@ export const proxy = async (req: NextRequest) => {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax", // "strict" blocks cookies on cross-site nav (e.g. WhatsApp link clicks)
   })
 
   await redis.hset(roomKey, {
