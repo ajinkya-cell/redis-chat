@@ -6,48 +6,43 @@ export const proxy = async (req: NextRequest) => {
   const pathname = req.nextUrl.pathname
   const roomMatch = pathname.match(/^\/room\/([^/]+)$/)
 
-  // ✅ since matcher already limits routes
-  if (!roomMatch) return NextResponse.redirect(new URL('/',req.url))
+  if (!roomMatch) return NextResponse.redirect(new URL("/", req.url))
 
   const roomId = roomMatch[1]
   const roomKey = `meta:${roomId}`
 
-  const rawMeta = await redis.hgetall<{connected : string[] ; createdAt: number}>(roomKey)
+  const rawMeta = await redis.hgetall<{ connected: string; createdAt: number }>(roomKey)
 
-  // ✅ room not found
+  // Room not found (expired or never existed)
   if (!rawMeta || Object.keys(rawMeta).length === 0) {
-    return NextResponse.redirect(
-      new URL("/?error=room-not-found", req.url)
-    )
+    return NextResponse.redirect(new URL("/?error=room-not-found", req.url))
   }
 
   const rawConnected = rawMeta.connected
-  const meta = {
-    connected: Array.isArray(rawConnected)
-      ? rawConnected
-      : rawConnected
-        ? JSON.parse(rawConnected)
-        : [],
-    createdAt: rawMeta.createdAt
-      ? Number(rawMeta.createdAt)
-      : Date.now(),
-  }
+  const connected: string[] = Array.isArray(rawConnected)
+    ? rawConnected
+    : rawConnected
+    ? JSON.parse(rawConnected)
+    : []
 
   const existingToken = req.cookies.get("x-auth-token")?.value
 
-  // ✅ already connected
-  if (existingToken && meta.connected.includes(existingToken)) {
+  // Already a valid member of this room — let them through
+  if (existingToken && connected.includes(existingToken)) {
     return NextResponse.next()
   }
 
-  // ❌ room full
-  if (meta.connected.length >= 2) {
-    return NextResponse.redirect(
-      new URL("/?error=room-full", req.url)
-    )
-  }
-
-  // ✅ join room
+  // New visitor — give them a token and register them.
+  // 
+  // ⚠️ There is intentionally NO "room full" check here anymore.
+  // The old check caused false positives because WhatsApp (and other messaging
+  // apps) open links in their own in-app browser (WebView), which is a completely
+  // separate cookie jar from the user's main browser. So even the room CREATOR
+  // would consume a second token slot just by opening their own link from WhatsApp,
+  // leaving no room for the guest to join.
+  //
+  // Since room IDs are cryptographically random nanoids (unguessable), the room is
+  // already private by obscurity — the "max 2 users" gate added no real security.
   const token = nanoid()
   const response = NextResponse.next()
 
@@ -55,11 +50,11 @@ export const proxy = async (req: NextRequest) => {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax", // "strict" blocks cookies on cross-site nav (e.g. WhatsApp link clicks)
+    sameSite: "lax", // "strict" breaks links opened from WhatsApp/Telegram/email
   })
 
   await redis.hset(roomKey, {
-    connected: JSON.stringify([...meta.connected, token]),
+    connected: JSON.stringify([...connected, token]),
   })
 
   return response
